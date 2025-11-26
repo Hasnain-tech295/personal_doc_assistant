@@ -84,7 +84,7 @@ def generate_song(name: str, artist: str) -> str:
 
 
 # 2. Building an Agent - FunctionAgent, AgentWorkflow (capable of managing multi agent) and more
-from llama_index.core.agent.workflow import FunctionAgent
+from llama_index.core.agent.workflow import FunctionAgent, AgentWorkflow
 
 # Creating basic tools
 def multiply(a: int, b: int) -> int:
@@ -145,10 +145,95 @@ workflow2 = FunctionAgent(
     system_prompt="You are a helpful financial assistant."
 )
 
-async def main():
-    response = await workflow2.run(user_msg="What is the current stock price of NVIDIA")
-    print(response)
+# async def main():
+#     response = await workflow2.run(user_msg="What is the current stock price of NVIDIA")
+#     print(response)
 
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
+    
+    
+# 6. Maintaining State
+# Agents are stateless in general. To maintain state, we need to keep track of the previous state.
+# using context class in llamaindex - maintaining state within and between runs
+
+from llama_index.core.workflow import Context
+
+# to maintain state between runs we create a new Context class ctx
+
+ctx1 = Context(workflow2)
+
+# Now we can pass it to our first run
+
+# async def main():
+#     response = await workflow2.run(user_msg="Hi! My name is Hasnain.", ctx=ctx1)
+#     print(response)
+#     response2 = await workflow2.run(user_msg="What is my name?", ctx=ctx1)
+#     print(response2)
+    
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
+    
+    
+# Maintaining state over longer period
+# The context is serializable, so it can be saved to DB, file etc. and loaded back in later
+
+# JsonSerializer - user json.dumps() and json.loads() to serialize and deserialize the context
+# JsonPickleSerializer - uses pickle to serialize and deserialize the context. If object in context is not serializable then we can use it
+
+from llama_index.core.workflow import JsonSerializer, JsonPickleSerializer
+
+# we can then serialize our context to dict and save it to a file
+
+ctx_dict = ctx1.to_dict(serializer=JsonSerializer())
+restored_ctx = Context.from_dict(
+    workflow2, ctx_dict, serializer=JsonSerializer()
+)
+
+# async def main():
+#     response3 = await workflow2.run(user_msg="What's my name?", ctx= restored_ctx)
+#     print(response3)
+    
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
+    
+    
+# Tools and State
+# Tools also have access to workflow context that means we can set and retrieve variables from the context and use them in the tools or to pass info between tools
+
+# AgentWorkflow - used a context variable "state" 
+# To access context - context parameter should be the first parameter of the tool
+
+# Async tool
+async def set_name(ctx: Context, name: str) -> str:
+    async with ctx.store.edit_state() as ctx_state:
+        ctx_state["state"]["name"] = name
+    return f"Name set to {name}"
+
+workflow4 = AgentWorkflow.from_tools_or_functions(
+    [set_name],
+    llm = llm2,
+    system_prompt="You are a helpful assistant that can set name.",
+    initial_state={"name": "unset"}
+)
+
+ctx2 = Context(workflow4)
+
+async def main():
+    response1 = await workflow4.run(user_msg ="What's my name?", ctx=ctx2)
+    print(response1)
+    
+    response2 = await workflow4.run(user_msg="My name is Uzaif", ctx=ctx2)
+    print(response2)
+# Accessing the value of state directly
+    state = await ctx2.store.get("state")
+    print(state["name"])
+    
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
+    
+
